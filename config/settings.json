@@ -6,14 +6,16 @@
     "position": "top-right",
     "avatar_size": 96,
     "transparency": 0.85,
-    "always_on_top": true
+    "always_on_top": true,
+    "display_enabled": true
   },
   "voice": {
     "wake_word_enabled": true,
     "continuous_listening": true,
     "push_to_talk": false,
     "microphone_name": "default",
-    "tts_voice": "default",
+    "tts_voice": "male",
+    "tts_rate": 175,
     "sensitivity": 0.5
   },
   "screen": {

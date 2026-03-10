@@ -2,9 +2,9 @@ from __future__ import annotations
 
 
 class TTSAdapter:
-    """Text-to-speech adapter with local pyttsx3 fallback."""
+    """Text-to-speech adapter with preferred male voice selection."""
 
-    def __init__(self, voice_name: str = "default", rate: int = 180) -> None:
+    def __init__(self, voice_name: str = "male", rate: int = 175) -> None:
         self.voice_name = voice_name
         self.rate = rate
         self._engine = None
@@ -16,13 +16,22 @@ class TTSAdapter:
 
             self._engine = pyttsx3.init()
             self._engine.setProperty("rate", self.rate)
-            if self.voice_name != "default":
-                for voice in self._engine.getProperty("voices"):
-                    if self.voice_name.lower() in voice.name.lower():
+            voices = self._engine.getProperty("voices")
+
+            preferred = [self.voice_name.lower(), "male", "dmitry", "alex", "pavel"]
+            for token in preferred:
+                for voice in voices:
+                    name = getattr(voice, "name", "").lower()
+                    if token in name:
                         self._engine.setProperty("voice", voice.id)
-                        break
+                        return
         except Exception:
             self._engine = None
+
+    def set_rate(self, rate: int) -> None:
+        self.rate = rate
+        if self._engine:
+            self._engine.setProperty("rate", rate)
 
     def speak(self, text: str) -> None:
         if not self._engine:

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import threading
 from dataclasses import dataclass
+from typing import Callable
 
 
 @dataclass
@@ -10,50 +12,59 @@ class STTResult:
 
 
 class STTAdapter:
-    """Speech-to-text adapter with a local-first strategy.
-
-    1) Try Vosk if available.
-    2) Fall back to speech_recognition (Google backend) if installed.
-    3) Return an empty result when not available.
-    """
-
-    def __init__(self, language: str = "ru-RU") -> None:
+    def __init__(self, language: str = "ru-RU", wake_word: str = "replica") -> None:
         self.language = language
+        self.wake_word = wake_word.lower()
+        self._running = False
+        self._thread: threading.Thread | None = None
 
-    def transcribe(self, audio_bytes: bytes) -> STTResult:
-        if not audio_bytes:
-            return STTResult(text="", provider="none")
+    def start_continuous_listening(
+        self,
+        on_text: Callable[[str], None],
+        sensitivity: float = 0.5,
+        wake_word_enabled: bool = True,
+    ) -> bool:
+        if self._running:
+            return True
 
-        try:
-            import vosk  # type: ignore
-            import json
-            import wave
-            import tempfile
+        self._running = True
 
-            with tempfile.NamedTemporaryFile(suffix=".wav") as tmp:
-                tmp.write(audio_bytes)
-                tmp.flush()
-                with wave.open(tmp.name, "rb") as wf:
-                    model = vosk.Model(lang="ru")
-                    rec = vosk.KaldiRecognizer(model, wf.getframerate())
-                    while True:
-                        data = wf.readframes(4000)
-                        if len(data) == 0:
-                            break
-                        rec.AcceptWaveform(data)
-                    payload = json.loads(rec.FinalResult())
-                    return STTResult(text=payload.get("text", ""), provider="vosk")
-        except Exception:
-            pass
-
-        try:
-            import speech_recognition as sr  # type: ignore
-            import io
+        def loop() -> None:
+            try:
+                import speech_recognition as sr  # type: ignore
+            except Exception:
+                self._running = False
+                return
 
             recognizer = sr.Recognizer()
-            with sr.AudioFile(io.BytesIO(audio_bytes)) as source:
-                audio = recognizer.record(source)
-            text = recognizer.recognize_google(audio, language=self.language)
-            return STTResult(text=text, provider="speech_recognition")
-        except Exception:
-            return STTResult(text="", provider="none")
+            recognizer.energy_threshold = max(100, int(1000 * sensitivity))
+            try:
+                mic = sr.Microphone()
+            except Exception:
+                self._running = False
+                return
+
+            while self._running:
+                try:
+                    with mic as source:
+                        recognizer.adjust_for_ambient_noise(source, duration=0.2)
+                        audio = recognizer.listen(source, phrase_time_limit=5)
+                    text = recognizer.recognize_google(audio, language=self.language).strip()
+                    if not text:
+                        continue
+                    normalized = text.lower()
+                    if wake_word_enabled and self.wake_word not in normalized:
+                        continue
+                    cleaned = text
+                    if wake_word_enabled:
+                        cleaned = normalized.replace(self.wake_word, "").strip() or text
+                    on_text(cleaned)
+                except Exception:
+                    continue
+
+        self._thread = threading.Thread(target=loop, daemon=True)
+        self._thread.start()
+        return True
+
+    def stop(self) -> None:
+        self._running = False

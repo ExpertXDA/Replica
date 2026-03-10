@@ -9,6 +9,7 @@ class InterfaceSettings:
     avatar_size: int = 96
     transparency: float = 0.85
     always_on_top: bool = True
+    display_enabled: bool = True
 
 
 @dataclass
@@ -17,7 +18,8 @@ class VoiceSettings:
     continuous_listening: bool = True
     push_to_talk: bool = False
     microphone_name: str = "default"
-    tts_voice: str = "default"
+    tts_voice: str = "male"
+    tts_rate: int = 175
     sensitivity: float = 0.5
 
 
@@ -29,7 +31,7 @@ class ScreenAnalysisSettings:
 
 @dataclass
 class AISettings:
-    llm_model: str = "local-llm"
+    llm_model: str = "llama3.1"
     vision_model: str = "local-vision"
     speech_model: str = "local-stt"
     tts_model: str = "local-tts"
