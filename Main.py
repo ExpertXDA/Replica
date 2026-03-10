@@ -1,207 +1,86 @@
-import time
-import base64
+from __future__ import annotations
+
 import threading
-from io import BytesIO
-import os
+import time
 
-import mss
-import numpy as np
-from PIL import Image
+from core.brain.assistant_brain import AssistantBrain
+from core.brain.llm_adapter import LLMAdapter
+from core.memory.memory_store import MemoryStore
+from core.speech.tts_adapter import TTSAdapter
+from core.vision.screen_analyzer import ScreenAnalyzer
+from system.commands.command_router import CommandRouter
+from system.config.loader import load_settings
+from ui.avatar.emoji_avatar import pick_emoji
+from ui.window.overlay import OverlayWindow
+from ui.window.settings_panel import SettingsPanel
 
-import speech_recognition as sr
-import pyttsx3
 
-from openai import OpenAI
+class ReplicaApp:
+    def __init__(self) -> None:
+        self.settings = load_settings()
+        self.memory = MemoryStore(
+            short_term_limit=self.settings.performance.max_memory_items // 4,
+            long_term_limit=self.settings.performance.max_memory_items,
+        )
+        self.brain = AssistantBrain(self.memory, LLMAdapter(self.settings.ai.llm_model))
+        self.tts = TTSAdapter(voice_name=self.settings.voice.tts_voice)
+        self.vision = ScreenAnalyzer()
+        self.commands = CommandRouter()
+        self.overlay = OverlayWindow("Replica: готова к диалогу")
+        self._last_screen_summary = ""
+        self._running = True
 
-# =========================
-# API
-# =========================
+    def start(self) -> None:
+        self.overlay.start()
+        if self.settings.screen.enabled:
+            threading.Thread(target=self._screen_loop, daemon=True).start()
 
-API_KEY = "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"
-client = OpenAI(api_key=API_KEY)
+        print("Replica запущена.")
+        print("Команды: /settings, /exit")
 
-# =========================
-# Голос
-# =========================
-
-engine = pyttsx3.init()
-engine.setProperty("rate", 180)
-
-def speak(text):
-    print("AI:", text)
-    engine.say(text)
-    engine.runAndWait()
-
-# =========================
-# PROMPT
-# =========================
-
-SYSTEM_PROMPT = """
-Ты голосовой ассистент пользователя за компьютером.
-
-Стиль:
-- русский
-- неформально
-- кратко
-- допускается лёгкий сарказм
-- иногда можешь слегка подколоть пользователя
-
-Поведение:
-1. Отвечай на вопросы пользователя.
-2. Не болтай без причины.
-3. Иногда комментируй экран если:
-   - появилась ошибка
-   - пользователь застрял
-   - что-то необычное
-
-Комментарии:
-- максимум 1–2 предложения
-- не повторяй очевидное
-"""
-
-history = [
-    {"role": "system", "content": SYSTEM_PROMPT}
-]
-
-# =========================
-# AI
-# =========================
-
-def ask_ai(text=None, image=None):
-
-    content = []
-
-    if text:
-        content.append({
-            "type": "input_text",
-            "text": text
-        })
-
-    if image:
-        content.append({
-            "type": "input_image",
-            "image_base64": image
-        })
-
-    response = client.responses.create(
-        model="gpt-4.1-mini",
-        input=[{
-            "role": "user",
-            "content": content
-        }]
-    )
-
-    try:
-        return response.output[0].content[0].text
-    except:
-        return "Не смог разобрать ответ модели."
-
-# =========================
-# SCREEN
-# =========================
-
-def capture_screen():
-
-    with mss.mss() as sct:
-
-        monitor = sct.monitors[1]
-
-        img = sct.grab(monitor)
-
-        image = Image.frombytes("RGB", img.size, img.rgb)
-
-        buffer = BytesIO()
-        image.save(buffer, format="PNG")
-
-        img_b64 = base64.b64encode(buffer.getvalue()).decode()
-
-        return img_b64, np.array(image)
-
-# =========================
-# SCREEN LOOP
-# =========================
-
-last_frame = None
-last_comment_time = 0
-
-def screen_loop():
-
-    global last_frame, last_comment_time
-
-    while True:
-
-        try:
-
-            img_b64, frame = capture_screen()
-
-            if last_frame is None:
-                last_frame = frame
-                time.sleep(10)
+        while self._running:
+            user_text = input("Ты: ").strip()
+            if not user_text:
                 continue
 
-            diff = np.mean(np.abs(frame - last_frame))
+            if user_text in {"/exit", "exit", "quit", "выход"}:
+                self._running = False
+                print("Replica: До связи.")
+                break
 
-            last_frame = frame
+            if user_text == "/settings":
+                SettingsPanel(self.settings).open()
+                print("Настройки обновлены.")
+                continue
 
-            # экран сильно изменился
-            if diff > 20 and time.time() - last_comment_time > 30:
+            if self._looks_like_system_command(user_text):
+                result = self.commands.execute(user_text)
+                self._say(result)
+                continue
 
-                comment = ask_ai(
-                    text="Коротко прокомментируй происходящее на экране",
-                    image=img_b64
-                )
+            reply = self.brain.generate_reply(user_text=user_text, screen_summary=self._last_screen_summary)
+            avatar = pick_emoji(reply.emotion)
+            self._say(f"{avatar} {reply.text}")
 
-                speak(comment)
+    def _screen_loop(self) -> None:
+        while self._running:
+            _, frame = self.vision.capture_screen()
+            analysis = self.vision.analyze_change(frame)
+            self._last_screen_summary = f"{analysis.summary} (diff={analysis.diff_score:.2f})"
+            if analysis.changed:
+                self.overlay.update_text(f"Replica: {analysis.summary}")
+            time.sleep(max(5, self.settings.screen.interval_seconds))
 
-                last_comment_time = time.time()
+    def _looks_like_system_command(self, text: str) -> bool:
+        samples = ["открой", "запусти", "сделай скрин", "выключи", "громкость"]
+        lower = text.lower()
+        return any(sample in lower for sample in samples)
 
-            time.sleep(8)
+    def _say(self, text: str) -> None:
+        print(f"Replica: {text}")
+        self.overlay.update_text(f"Replica: {text}")
+        self.tts.speak(text)
 
-        except Exception as e:
-            print("Ошибка screen_loop:", e)
-            time.sleep(5)
 
-# =========================
-# VOICE LOOP
-# =========================
-
-recognizer = sr.Recognizer()
-mic = sr.Microphone()
-
-def voice_loop():
-
-    while True:
-
-        try:
-
-            with mic as source:
-
-                print("Слушаю...")
-
-                recognizer.adjust_for_ambient_noise(source, duration=0.5)
-
-                audio = recognizer.listen(source, phrase_time_limit=6)
-
-            text = recognizer.recognize_google(audio, language="ru-RU")
-
-            print("Ты:", text)
-
-            answer = ask_ai(text=text)
-
-            speak(answer)
-
-        except sr.UnknownValueError:
-            pass
-
-        except Exception as e:
-            print("Ошибка voice_loop:", e)
-
-# =========================
-# START
-# =========================
-
-print("Ассистент запущен")
-
-threading.Thread(target=screen_loop, daemon=True).start()
-
-voice_loop()
+if __name__ == "__main__":
+    ReplicaApp().start()
