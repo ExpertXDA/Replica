@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 
+from core.brain.llm_adapter import LLMAdapter
 from core.brain.personality import PERSONALITY_PROMPT
 from core.memory.memory_store import MemoryStore
 from ui.emotions.state import Emotion
@@ -12,8 +13,9 @@ class AssistantReply:
 
 
 class AssistantBrain:
-    def __init__(self, memory: MemoryStore) -> None:
+    def __init__(self, memory: MemoryStore, llm: LLMAdapter) -> None:
         self.memory = memory
+        self.llm = llm
 
     def build_context(self, user_text: str, screen_summary: str | None = None) -> str:
         recent = "\n".join(self.memory.recent_dialog())
@@ -24,25 +26,24 @@ class AssistantBrain:
             f"\n\nЗапрос пользователя: {user_text}{screen_block}"
         )
 
-    def generate_local_reply(self, user_text: str, screen_summary: str | None = None) -> AssistantReply:
+    def generate_reply(self, user_text: str, screen_summary: str | None = None) -> AssistantReply:
+        context = self.build_context(user_text, screen_summary)
+        llm_reply = self.llm.generate(context).text.strip()
+        if not llm_reply:
+            llm_reply = "Дай секунду, подумаю над этим."
+
         normalized = user_text.lower()
         if "ошиб" in normalized or "не работает" in normalized:
             emotion = Emotion.CONCERNED
-            reply = "Похоже что-то пошло не так. Хочешь, разберём это шаг за шагом?"
         elif "спасибо" in normalized:
             emotion = Emotion.HAPPY
-            reply = "Рад помочь. Если нужно, продолжим."
         elif "?" in user_text:
             emotion = Emotion.THINKING
-            reply = "Интересный вопрос. Сейчас разложу по пунктам."
+        elif screen_summary and "изменения" in screen_summary.lower():
+            emotion = Emotion.CURIOUS
         else:
             emotion = Emotion.NEUTRAL
-            reply = "Понял тебя. Продолжаю наблюдать и помогать по ходу."
-
-        if screen_summary and "много вкладок" in screen_summary.lower():
-            reply += " Вижу много открытых вкладок, можем навести порядок."
-            emotion = Emotion.CURIOUS
 
         self.memory.add_short_term(f"user: {user_text}")
-        self.memory.add_short_term(f"assistant: {reply}")
-        return AssistantReply(text=reply, emotion=emotion)
+        self.memory.add_short_term(f"assistant: {llm_reply}")
+        return AssistantReply(text=llm_reply, emotion=emotion)
