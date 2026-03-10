@@ -10,40 +10,74 @@ from ui.emotions.state import Emotion
 class AssistantReply:
     text: str
     emotion: Emotion
+    intent: str | None
+    argument: str
 
 
 class AssistantBrain:
+
     def __init__(self, memory: MemoryStore, llm: LLMAdapter) -> None:
         self.memory = memory
         self.llm = llm
 
     def build_context(self, user_text: str, screen_summary: str | None = None) -> str:
+
         recent = "\n".join(self.memory.recent_dialog())
-        screen_block = f"\nКонтекст экрана: {screen_summary}" if screen_summary else ""
+
+        screen_block = ""
+        if screen_summary:
+            screen_block = f"\nКонтекст экрана: {screen_summary}"
+
         return (
             f"{PERSONALITY_PROMPT}\n\n"
-            f"Последний диалог:\n{recent if recent else 'нет данных'}"
-            f"\n\nЗапрос пользователя: {user_text}{screen_block}"
+            f"Недавний диалог:\n"
+            f"{recent if recent else 'нет данных'}\n\n"
+            f"Пользователь: {user_text}"
+            f"{screen_block}\n\n"
+            f"Ответь строго в указанном формате."
         )
 
     def generate_reply(self, user_text: str, screen_summary: str | None = None) -> AssistantReply:
-        context = self.build_context(user_text, screen_summary)
-        llm_reply = self.llm.generate(context).text.strip()
-        if not llm_reply:
-            llm_reply = "Дай секунду, подумаю над этим."
 
-        normalized = user_text.lower()
-        if "ошиб" in normalized or "не работает" in normalized:
-            emotion = Emotion.CONCERNED
-        elif "спасибо" in normalized:
-            emotion = Emotion.HAPPY
-        elif "?" in user_text:
-            emotion = Emotion.THINKING
-        elif screen_summary and "изменения" in screen_summary.lower():
-            emotion = Emotion.CURIOUS
-        else:
-            emotion = Emotion.NEUTRAL
+        context = self.build_context(user_text, screen_summary)
+
+        raw = self.llm.generate(context).text.strip()
+
+        emotion = Emotion.NEUTRAL
+        intent = None
+        argument = ""
+        text = raw
+
+        try:
+
+            lines = raw.splitlines()
+
+            for line in lines:
+
+                if line.startswith("emotion:"):
+                    emotion_str = line.split(":", 1)[1].strip()
+                    emotion = Emotion[emotion_str.upper()]
+
+                elif line.startswith("intent:"):
+                    intent_value = line.split(":", 1)[1].strip()
+                    if intent_value != "none":
+                        intent = intent_value
+
+                elif line.startswith("argument:"):
+                    argument = line.split(":", 1)[1].strip()
+
+                elif line.startswith("text:"):
+                    text = line.split(":", 1)[1].strip()
+
+        except Exception:
+            text = raw
 
         self.memory.add_short_term(f"user: {user_text}")
-        self.memory.add_short_term(f"assistant: {llm_reply}")
-        return AssistantReply(text=llm_reply, emotion=emotion)
+        self.memory.add_short_term(f"assistant: {text}")
+
+        return AssistantReply(
+            text=text,
+            emotion=emotion,
+            intent=intent,
+            argument=argument
+        )

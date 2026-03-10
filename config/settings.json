@@ -14,7 +14,7 @@
     "continuous_listening": true,
     "push_to_talk": false,
     "microphone_name": "default",
-    "tts_voice": "male",
+    "tts_voice": "Pavel",
     "tts_rate": 175,
     "sensitivity": 0.5
   },
@@ -23,11 +23,11 @@
     "interval_seconds": 20
   },
   "ai": {
-    "llm_model": "llama3.1",
+    "llm_model": "llama3.2-vision",
     "vision_model": "local-vision",
     "speech_model": "local-stt",
     "tts_model": "local-tts",
-    "performance_mode": "balanced",
+    "performance_mode": "max",
     "use_gpu": true,
     "memory_limit_mb": 2048
   }

@@ -1,40 +1,65 @@
 from __future__ import annotations
 
+import subprocess
+import threading
+import queue
+import numpy as np
+import sounddevice as sd
+
 
 class TTSAdapter:
-    """Text-to-speech adapter with preferred male voice selection."""
 
-    def __init__(self, voice_name: str = "male", rate: int = 175) -> None:
-        self.voice_name = voice_name
+    def __init__(self, rate: float = 1.0) -> None:
         self.rate = rate
-        self._engine = None
-        self._setup_engine()
+        self._queue: queue.Queue[str] = queue.Queue()
 
-    def _setup_engine(self) -> None:
-        try:
-            import pyttsx3  # type: ignore
+        self.piper_path = "piper/piper.exe"
+        self.model_path = "piper/models/ru_RU-dmitri-medium.onnx"
 
-            self._engine = pyttsx3.init()
-            self._engine.setProperty("rate", self.rate)
-            voices = self._engine.getProperty("voices")
+        # иногда Windows выбирает не то устройство
+        sd.default.samplerate = 22050
+        sd.default.channels = 1
 
-            preferred = [self.voice_name.lower(), "male", "dmitry", "alex", "pavel"]
-            for token in preferred:
-                for voice in voices:
-                    name = getattr(voice, "name", "").lower()
-                    if token in name:
-                        self._engine.setProperty("voice", voice.id)
-                        return
-        except Exception:
-            self._engine = None
-
-    def set_rate(self, rate: int) -> None:
-        self.rate = rate
-        if self._engine:
-            self._engine.setProperty("rate", rate)
+        self._thread = threading.Thread(target=self._loop, daemon=True)
+        self._thread.start()
 
     def speak(self, text: str) -> None:
-        if not self._engine:
-            return
-        self._engine.say(text)
-        self._engine.runAndWait()
+        if text.strip():
+            self._queue.put(text)
+
+    def _loop(self) -> None:
+        while True:
+            text = self._queue.get()
+
+            try:
+                process = subprocess.Popen(
+                    [
+                        self.piper_path,
+                        "-m",
+                        self.model_path,
+                        "--length_scale",
+                        str(1 / self.rate),
+                        "--output_raw",
+                    ],
+                    stdin=subprocess.PIPE,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.DEVNULL,
+                )
+
+                audio_bytes, _ = process.communicate(input=text.encode("utf-8"))
+
+                if not audio_bytes:
+                    print("TTS: пустой аудио буфер")
+                    continue
+
+                # Piper -> int16
+                audio = np.frombuffer(audio_bytes, dtype=np.int16)
+
+                # int16 -> float32
+                audio = audio.astype(np.float32) / 32768.0
+
+                sd.play(audio)
+                sd.wait()
+
+            except Exception as e:
+                print("TTS error:", e)
