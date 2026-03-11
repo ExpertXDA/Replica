@@ -1,7 +1,5 @@
 from dataclasses import dataclass, field
-
 from system.performance.modes import PerformanceMode, resolve_mode
-
 
 @dataclass
 class InterfaceSettings:
@@ -10,7 +8,7 @@ class InterfaceSettings:
     transparency: float = 0.85
     always_on_top: bool = True
     display_enabled: bool = True
-
+    auto_hide: bool = False  # <--- Добавили новую настройку
 
 @dataclass
 class VoiceSettings:
@@ -22,12 +20,10 @@ class VoiceSettings:
     tts_rate: int = 175
     sensitivity: float = 0.5
 
-
 @dataclass
 class ScreenAnalysisSettings:
     enabled: bool = True
     interval_seconds: int = 20
-
 
 @dataclass
 class AISettings:
@@ -38,7 +34,6 @@ class AISettings:
     performance_mode: str = "balanced"
     use_gpu: bool = True
     memory_limit_mb: int = 2048
-
 
 @dataclass
 class ReplicaSettings:

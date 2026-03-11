@@ -66,21 +66,17 @@ class LLMAdapter:
             return False
 
     def _pull_if_missing(self, requests_module):
-
         r = requests_module.get(
             "http://127.0.0.1:11434/api/tags",
             timeout=10
         )
-
         r.raise_for_status()
 
         models = r.json().get("models", [])
         names = {m.get("name", "") for m in models}
 
         if not any(name.startswith(self.model_name) for name in names):
-
             print(f"⬇ Скачиваю модель {self.model_name}")
-
             requests_module.post(
                 "http://127.0.0.1:11434/api/pull",
                 json={
@@ -89,28 +85,27 @@ class LLMAdapter:
                 },
                 timeout=600
             ).raise_for_status()
-
             print("✅ Модель скачана")
-
         else:
             print("✅ Модель уже есть")
 
     # ------------------------------------------------
     # TEXT GENERATION
     # ------------------------------------------------
-
+    # ВАЖНО: Метод теперь на нужном уровне отступа (внутри класса LLMAdapter)
     def generate(self, prompt: str, image: str | None = None) -> LLMReply:
-
         try:
             import requests
 
             payload = {
                 "model": self.model_name,
                 "prompt": prompt,
-                "stream": False
+                "stream": False,
+                "options": {
+                    "temperature": 0.7
+                }
             }
 
-            # если есть изображение — добавляем vision
             if image is not None:
                 payload["images"] = [image]
 
@@ -129,11 +124,8 @@ class LLMAdapter:
             )
 
         except Exception as e:
-
             print("Ошибка генерации:", e)
-
             return LLMReply(
-                text="Я рядом. Опиши задачу.",
+                text="Ошибка связи с ИИ.",
                 provider="fallback"
             )
-

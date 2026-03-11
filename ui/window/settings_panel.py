@@ -1,163 +1,127 @@
-from __future__ import annotations
-
 import tkinter as tk
 from tkinter import ttk
-from typing import Callable
-
 from system.config.loader import save_settings
 from system.config.settings import ReplicaSettings
 
 
 class SettingsPanel:
-
-    def __init__(
-        self,
-        root: tk.Tk,
-        settings: ReplicaSettings,
-        on_saved: Callable[[], None] | None = None
-    ) -> None:
-
+    def __init__(self, root, settings, on_saved=None):
         self.root = root
         self.settings = settings
         self.on_saved = on_saved
 
-    def open(self) -> None:
-
+    def open(self):
         window = tk.Toplevel(self.root)
-        window.title("Replica Settings")
-        window.geometry("500x470")
-        window.resizable(False, False)
+        window.title("Настройки Replica")
+        window.geometry("500x950")
+        window.configure(bg="#121212")
 
-        container = ttk.Frame(window, padding=16)
+        # --- СТИЛИ ---
+        style = ttk.Style()
+        style.theme_use('clam')
+        bg, fg, field_bg, accent = "#121212", "#ffffff", "#252525", "#0078D7"
+
+        style.configure("TFrame", background=bg)
+        style.configure("TLabel", background=bg, foreground=fg)
+        style.configure("TLabelframe", background="#1e1e1e", borderwidth=0)
+        style.configure("TLabelframe.Label", background="#1e1e1e", foreground=accent, font=("Segoe UI", 10, "bold"))
+        style.configure("TCheckbutton", background="#1e1e1e", foreground=fg)
+        style.configure("TEntry", fieldbackground=field_bg, foreground=fg, borderwidth=0, padding=5)
+        style.configure("TCombobox", fieldbackground=field_bg, foreground=fg, borderwidth=0)
+        style.configure("TSpinbox", fieldbackground=field_bg, foreground=fg, borderwidth=0)
+        style.configure("Modern.TButton", background=accent, foreground="white", borderwidth=0, padding=10)
+
+        container = ttk.Frame(window, padding=20)
         container.pack(fill="both", expand=True)
 
-        # ---------- VARIABLES ----------
+        # --- ПЕРЕМЕННЫЕ ---
+        lang_var = tk.StringVar(value=self.settings.language)
+        auto_var = tk.BooleanVar(value=self.settings.autostart)
+        auto_hide_var = tk.BooleanVar(value=self.settings.interface.auto_hide)
+        size_var = tk.IntVar(value=self.settings.interface.avatar_size)
+        vol_var = tk.DoubleVar(value=self.settings.volume)
 
-        interval_var = tk.IntVar(value=self.settings.screen.interval_seconds)
-        mode_var = tk.StringVar(value=self.settings.ai.performance_mode)
-        model_var = tk.StringVar(value=self.settings.ai.llm_model)
+        llm_var = tk.StringVar(value=self.settings.ai.llm_model)
+        vision_var = tk.StringVar(value=self.settings.ai.vision_model)
+        stt_var = tk.StringVar(value=self.settings.ai.speech_model)
+        tts_m_var = tk.StringVar(value=self.settings.ai.tts_model)
+        perf_var = tk.StringVar(value=self.settings.ai.performance_mode)
+        gpu_var = tk.BooleanVar(value=self.settings.ai.use_gpu)
+        mem_var = tk.IntVar(value=self.settings.ai.memory_limit_mb)
 
-        tts_voice_var = tk.StringVar(value=self.settings.voice.tts_voice)
-        tts_rate_var = tk.IntVar(value=self.settings.voice.tts_rate)
-        sensitivity_var = tk.DoubleVar(value=self.settings.voice.sensitivity)
+        wake_var = tk.BooleanVar(value=self.settings.voice.wake_word_enabled)
+        cont_var = tk.BooleanVar(value=self.settings.voice.continuous_listening)
+        mic_var = tk.StringVar(value=self.settings.voice.microphone_name)
 
-        display_var = tk.BooleanVar(value=self.settings.interface.display_enabled)
-        avatar_size_var = tk.IntVar(value=self.settings.interface.avatar_size)
-        alpha_var = tk.DoubleVar(value=self.settings.interface.transparency)
+        screen_en_var = tk.BooleanVar(value=self.settings.screen.enabled)
+        int_var = tk.IntVar(value=self.settings.screen.interval_seconds)
 
-        # ---------- SECTIONS ----------
+        # --- СЕКЦИИ ---
+        def create_frame(text):
+            f = ttk.LabelFrame(container, text=f" {text} ", padding=10)
+            f.pack(fill="x", pady=5)
+            return f
 
-        ai_frame = ttk.LabelFrame(container, text="AI", padding=12)
-        ai_frame.pack(fill="x", pady=6)
+        f_gen = create_frame("ГЛОБАЛЬНЫЕ")
+        f_ai = create_frame("AI & МОДЕЛИ")
+        f_voice = create_frame("ГОЛОС & МИКРОФОН")
+        f_screen = create_frame("АНАЛИЗ ЭКРАНА")
+        f_ui = create_frame("ИНТЕРФЕЙС")
 
-        voice_frame = ttk.LabelFrame(container, text="Голос", padding=12)
-        voice_frame.pack(fill="x", pady=6)
+        # Глобал
+        ttk.Label(f_gen, text="Язык:").pack(anchor="w");
+        ttk.Entry(f_gen, textvariable=lang_var).pack(fill="x")
+        ttk.Checkbutton(f_gen, text="Автозапуск", variable=auto_var).pack(anchor="w")
+        ttk.Label(f_gen, text="Громкость:").pack(anchor="w");
+        ttk.Scale(f_gen, from_=0, to=1, variable=vol_var, orient="horizontal").pack(fill="x")
 
-        interface_frame = ttk.LabelFrame(container, text="Интерфейс", padding=12)
-        interface_frame.pack(fill="x", pady=6)
+        # AI
+        ttk.Label(f_ai, text="LLM Модель:").pack(anchor="w");
+        ttk.Entry(f_ai, textvariable=llm_var).pack(fill="x")
+        ttk.Label(f_ai, text="Vision Модель:").pack(anchor="w");
+        ttk.Entry(f_ai, textvariable=vision_var).pack(fill="x")
+        ttk.Label(f_ai, text="Лимит памяти (MB):").pack(anchor="w");
+        ttk.Spinbox(f_ai, from_=512, to=8192, textvariable=mem_var).pack(fill="x")
+        ttk.Checkbutton(f_ai, text="Использовать GPU", variable=gpu_var).pack(anchor="w")
 
-        # ---------- AI ----------
+        # Voice
+        ttk.Checkbutton(f_voice, text="Wake word", variable=wake_var).pack(anchor="w")
+        ttk.Checkbutton(f_voice, text="Постоянное прослушивание", variable=cont_var).pack(anchor="w")
+        ttk.Label(f_voice, text="Микрофон:").pack(anchor="w");
+        ttk.Entry(f_voice, textvariable=mic_var).pack(fill="x")
 
-        ttk.Label(ai_frame, text="AI модель").grid(row=0, column=0, sticky="w", pady=4)
-        ttk.Entry(ai_frame, textvariable=model_var, width=32).grid(row=0, column=1, sticky="ew")
+        # Screen
+        ttk.Checkbutton(f_screen, text="Анализ включен", variable=screen_en_var).pack(anchor="w")
+        ttk.Label(f_screen, text="Интервал (сек):").pack(anchor="w");
+        ttk.Spinbox(f_screen, from_=1, to=300, textvariable=int_var).pack(fill="x")
 
-        ttk.Label(ai_frame, text="Режим производительности").grid(row=1, column=0, sticky="w", pady=4)
-        ttk.Combobox(
-            ai_frame,
-            textvariable=mode_var,
-            values=["eco", "balanced", "max"],
-            state="readonly",
-            width=29
-        ).grid(row=1, column=1, sticky="ew")
+        # UI (Размер аватара + Авто-скрытие)
+        ttk.Label(f_ui, text="Размер аватара:").pack(anchor="w")
+        ttk.Spinbox(f_ui, from_=64, to=256, textvariable=size_var).pack(fill="x")
+        ttk.Checkbutton(f_ui, text="Авто-скрытие текста", variable=auto_hide_var).pack(anchor="w", pady=5)
 
-        ttk.Label(ai_frame, text="Интервал анализа экрана (сек)").grid(row=2, column=0, sticky="w", pady=4)
-        ttk.Spinbox(
-            ai_frame,
-            from_=5,
-            to=120,
-            textvariable=interval_var,
-            width=10
-        ).grid(row=2, column=1, sticky="w")
-
-        # ---------- VOICE ----------
-
-        ttk.Label(voice_frame, text="Голос").grid(row=0, column=0, sticky="w", pady=4)
-        ttk.Entry(voice_frame, textvariable=tts_voice_var, width=32).grid(row=0, column=1, sticky="ew")
-
-        ttk.Label(voice_frame, text="Скорость речи").grid(row=1, column=0, sticky="w", pady=4)
-        ttk.Scale(
-            voice_frame,
-            from_=120,
-            to=230,
-            variable=tts_rate_var,
-            orient="horizontal"
-        ).grid(row=1, column=1, sticky="ew")
-
-        ttk.Label(voice_frame, text="Чувствительность микрофона").grid(row=2, column=0, sticky="w", pady=4)
-        ttk.Scale(
-            voice_frame,
-            from_=0.1,
-            to=1.0,
-            variable=sensitivity_var,
-            orient="horizontal"
-        ).grid(row=2, column=1, sticky="ew")
-
-        # ---------- INTERFACE ----------
-
-        ttk.Label(interface_frame, text="Размер аватара").grid(row=0, column=0, sticky="w", pady=4)
-        ttk.Spinbox(
-            interface_frame,
-            from_=48,
-            to=256,
-            textvariable=avatar_size_var,
-            width=10
-        ).grid(row=0, column=1, sticky="w")
-
-        ttk.Label(interface_frame, text="Прозрачность оверлея").grid(row=1, column=0, sticky="w", pady=4)
-        ttk.Scale(
-            interface_frame,
-            from_=0.3,
-            to=1.0,
-            variable=alpha_var,
-            orient="horizontal"
-        ).grid(row=1, column=1, sticky="ew")
-
-        ttk.Checkbutton(
-            interface_frame,
-            text="Показывать ассистента поверх окон",
-            variable=display_var
-        ).grid(row=2, column=0, columnspan=2, sticky="w", pady=6)
-
-        # ---------- SAVE ----------
-
-        button_frame = ttk.Frame(container)
-        button_frame.pack(fill="x", pady=(10, 0))
-
-        def on_save() -> None:
-
-            self.settings.ai.llm_model = model_var.get().strip() or self.settings.ai.llm_model
-            self.settings.ai.performance_mode = mode_var.get()
-
-            self.settings.screen.interval_seconds = int(interval_var.get())
-
-            self.settings.voice.tts_voice = tts_voice_var.get().strip() or "male"
-            self.settings.voice.tts_rate = int(tts_rate_var.get())
-            self.settings.voice.sensitivity = float(sensitivity_var.get())
-
-            self.settings.interface.display_enabled = bool(display_var.get())
-            self.settings.interface.avatar_size = int(avatar_size_var.get())
-            self.settings.interface.transparency = float(alpha_var.get())
+        # --- СОХРАНЕНИЕ ---
+        def save():
+            self.settings.language = lang_var.get()
+            self.settings.autostart = auto_var.get()
+            self.settings.volume = vol_var.get()
+            self.settings.ai.llm_model = llm_var.get()
+            self.settings.ai.vision_model = vision_var.get()
+            self.settings.ai.speech_model = stt_var.get()
+            self.settings.ai.tts_model = tts_m_var.get()
+            self.settings.ai.performance_mode = perf_var.get()
+            self.settings.ai.use_gpu = gpu_var.get()
+            self.settings.ai.memory_limit_mb = mem_var.get()
+            self.settings.voice.wake_word_enabled = wake_var.get()
+            self.settings.voice.continuous_listening = cont_var.get()
+            self.settings.voice.microphone_name = mic_var.get()
+            self.settings.screen.enabled = screen_en_var.get()
+            self.settings.screen.interval_seconds = int(int_var.get())
+            self.settings.interface.auto_hide = auto_hide_var.get()
+            self.settings.interface.avatar_size = int(size_var.get())
 
             save_settings(self.settings)
-
-            if self.on_saved:
-                self.on_saved()
-
+            if self.on_saved: self.on_saved()
             window.destroy()
 
-        ttk.Button(
-            button_frame,
-            text="Сохранить настройки",
-            command=on_save
-        ).pack(side="right")
-
+        ttk.Button(container, text="СОХРАНИТЬ", command=save, style="Modern.TButton").pack(fill="x", pady=20, ipady=5)
